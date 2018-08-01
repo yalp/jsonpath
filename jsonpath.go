@@ -199,17 +199,23 @@ func (p *parser) prepareWildcard() error {
 }
 
 func (p *parser) parseDeep() (err error) {
-	p.add(func(r, c interface{}, a actions) (interface{}, error) {
-		return recSearch(r, c, a, []interface{}{}), nil
-	})
 	p.scanner.Mode = scanner.ScanIdents
 	switch p.scan() {
 	case scanner.Ident:
+		p.add(func(r, c interface{}, a actions) (interface{}, error) {
+			return recSearch(r, c, a, []interface{}{}), nil
+		})
 		return p.parseObjAccess()
 	case '*':
+		p.add(func(r, c interface{}, a actions) (interface{}, error) {
+			return recSearchChilds(r, c, a, []interface{}{}), nil
+		})
 		p.add(func(r, c interface{}, a actions) (interface{}, error) { return a.next(r, c) })
 		return nil
 	case '[':
+		p.add(func(r, c interface{}, a actions) (interface{}, error) {
+			return recSearch(r, c, a, []interface{}{}), nil
+		})
 		return p.parseBracket()
 	case scanner.EOF:
 		return fmt.Errorf("cannot end with a scan '..' at %d", p.column())
@@ -338,18 +344,19 @@ func (p *parser) parseExpression() (exprFunc, error) {
 }
 
 func recSearch(r, c interface{}, a actions, acc []interface{}) []interface{} {
+	if result, err := a.next(r, c); err == nil {
+		acc = append(acc, result)
+	}
+	return recSearchChilds(r, c, a, acc)
+}
+
+func recSearchChilds(r, c interface{}, a actions, acc []interface{}) []interface{} {
 	if obj, ok := c.(map[string]interface{}); ok {
 		for _, c := range obj {
-			if result, err := a.next(r, c); err == nil {
-				acc = append(acc, result)
-			}
 			acc = recSearch(r, c, a, acc)
 		}
 	} else if array, ok := c.([]interface{}); ok {
 		for _, c := range array {
-			if result, err := a.next(r, c); err == nil {
-				acc = append(acc, result)
-			}
 			acc = recSearch(r, c, a, acc)
 		}
 	}

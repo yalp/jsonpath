@@ -98,9 +98,9 @@ func TestParsing(t *testing.T) {
 		"$.A[-2:]":   []interface{}{false, nil},
 		"$.A[:-1]":   []interface{}{"string", 23.3, 3, true, false},
 		"$.A[::-1]":  []interface{}{nil, false, true, 3, 23.3, "string"},
-		"$..C":       []interface{}{3.1415, 3.141592},
+		"$..C":       []interface{}{3.14, 3.1415, 3.141592},
 		"$..V[1].C":  []interface{}{3.141592},
-		"$..[C]":     []interface{}{3.1415, 3.141592},
+		"$..[C]":     []interface{}{3.14, 3.1415, 3.141592},
 		"$.D.V..*": []interface{}{
 			"string2",
 			map[string]interface{}{
