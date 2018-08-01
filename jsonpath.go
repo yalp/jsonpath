@@ -84,6 +84,15 @@ func (a actions) call(r, c interface{}) (interface{}, error) {
 
 type exprFunc func(r, c interface{}) (interface{}, error)
 
+type searchResults []interface{}
+
+func (sr searchResults) append(v interface{}) searchResults {
+	if vsr, ok := v.(searchResults); ok {
+		return append(sr, vsr...)
+	}
+	return append(sr, v)
+}
+
 type parser struct {
 	scanner scanner.Scanner
 	path    string
@@ -93,7 +102,13 @@ type parser struct {
 func (p *parser) prepareFilterFunc() FilterFunc {
 	actions := p.actions
 	return func(value interface{}) (interface{}, error) {
-		return actions.next(value, value)
+		result, err := actions.next(value, value)
+		if err == nil {
+			if sr, ok := result.(searchResults); ok {
+				result = ([]interface{})(sr)
+			}
+		}
+		return result, err
 	}
 }
 
@@ -175,14 +190,14 @@ func (p *parser) parseObjAccess() error {
 
 func (p *parser) prepareWildcard() error {
 	p.add(func(r, c interface{}, a actions) (interface{}, error) {
-		values := []interface{}{}
+		values := searchResults{}
 		if obj, ok := c.(map[string]interface{}); ok {
 			for _, v := range obj {
 				v, err := a.next(r, v)
 				if err != nil {
 					continue
 				}
-				values = append(values, v)
+				values = values.append(v)
 			}
 		} else if array, ok := c.([]interface{}); ok {
 			for _, v := range array {
@@ -190,7 +205,7 @@ func (p *parser) prepareWildcard() error {
 				if err != nil {
 					continue
 				}
-				values = append(values, v)
+				values = values.append(v)
 			}
 		}
 		return values, nil
@@ -199,22 +214,31 @@ func (p *parser) prepareWildcard() error {
 }
 
 func (p *parser) parseDeep() (err error) {
-	p.add(func(r, c interface{}, a actions) (interface{}, error) {
-		return recSearch(r, c, a, []interface{}{}), nil
-	})
 	p.scanner.Mode = scanner.ScanIdents
 	switch p.scan() {
 	case scanner.Ident:
+		p.add(func(r, c interface{}, a actions) (interface{}, error) {
+			return recSearchParent(r, c, a, searchResults{}), nil
+		})
 		return p.parseObjAccess()
-	case '*':
-		p.add(func(r, c interface{}, a actions) (interface{}, error) { return a.next(r, c) })
-		return nil
 	case '[':
+		p.add(func(r, c interface{}, a actions) (interface{}, error) {
+			return recSearchParent(r, c, a, searchResults{}), nil
+		})
 		return p.parseBracket()
+	case '*':
+		p.add(func(r, c interface{}, a actions) (interface{}, error) {
+			return recSearchChildren(r, c, a, searchResults{}), nil
+		})
+		p.add(func(r, c interface{}, a actions) (interface{}, error) {
+			return a.next(r, c)
+		})
+		return nil
 	case scanner.EOF:
 		return fmt.Errorf("cannot end with a scan '..' at %d", p.column())
 	default:
-		return fmt.Errorf("unexpected token '%s' after deep search '..' at %d", p.text(), p.column())
+		return fmt.Errorf("unexpected token '%s' after deep search '..' at %d",
+			p.text(), p.column())
 	}
 }
 
@@ -337,20 +361,21 @@ func (p *parser) parseExpression() (exprFunc, error) {
 	return nil, errors.New("Expression are not (yet) implemented")
 }
 
-func recSearch(r, c interface{}, a actions, acc []interface{}) []interface{} {
+func recSearchParent(r, c interface{}, a actions, acc searchResults) searchResults {
+	if v, err := a.next(r, c); err == nil {
+		acc = acc.append(v)
+	}
+	return recSearchChildren(r, c, a, acc)
+}
+
+func recSearchChildren(r, c interface{}, a actions, acc searchResults) searchResults {
 	if obj, ok := c.(map[string]interface{}); ok {
 		for _, c := range obj {
-			if result, err := a.next(r, c); err == nil {
-				acc = append(acc, result)
-			}
-			acc = recSearch(r, c, a, acc)
+			acc = recSearchParent(r, c, a, acc)
 		}
 	} else if array, ok := c.([]interface{}); ok {
 		for _, c := range array {
-			if result, err := a.next(r, c); err == nil {
-				acc = append(acc, result)
-			}
-			acc = recSearch(r, c, a, acc)
+			acc = recSearchParent(r, c, a, acc)
 		}
 	}
 	return acc
@@ -413,14 +438,22 @@ func prepareSlice(indexes []interface{}, column int) actionFunc {
 		if step == 0 {
 			step = 1
 		}
-		var values []interface{}
+		var values searchResults
 		if step > 0 {
 			for i := start; i < end; i += step {
-				values = append(values, array[i])
+				v, err := a.next(r, array[i])
+				if err != nil {
+					continue
+				}
+				values = values.append(v)
 			}
 		} else { // reverse order on negative step
 			for i := end - 1; i >= start; i += step {
-				values = append(values, array[i])
+				v, err := a.next(r, array[i])
+				if err != nil {
+					continue
+				}
+				values = values.append(v)
 			}
 		}
 		return values, nil
@@ -430,7 +463,7 @@ func prepareSlice(indexes []interface{}, column int) actionFunc {
 func prepareUnion(indexes []interface{}, column int) actionFunc {
 	return func(r, c interface{}, a actions) (interface{}, error) {
 		if obj, ok := c.(map[string]interface{}); ok {
-			var values []interface{}
+			var values searchResults
 			for _, index := range indexes {
 				key, err := indexAsString(index, r, c)
 				if err != nil {
@@ -442,11 +475,11 @@ func prepareUnion(indexes []interface{}, column int) actionFunc {
 				if c, err = a.next(r, c); err != nil {
 					return nil, err
 				}
-				values = append(values, c)
+				values = values.append(c)
 			}
 			return values, nil
 		} else if array, ok := c.([]interface{}); ok {
-			var values []interface{}
+			var values searchResults
 			for _, index := range indexes {
 				index, err := indexAsInt(index, r, c)
 				if err != nil {
@@ -458,7 +491,7 @@ func prepareUnion(indexes []interface{}, column int) actionFunc {
 				if c, err = a.next(r, array[index]); err != nil {
 					return nil, err
 				}
-				values = append(values, c)
+				values = values.append(c)
 			}
 			return values, nil
 		}
