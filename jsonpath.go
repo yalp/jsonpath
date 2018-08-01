@@ -65,7 +65,7 @@ type FilterFunc func(value interface{}) (interface{}, error)
 // a: the list of actions to apply next
 // v: value
 
-// actionFunc applies a transformation to current value (possibily using root)
+// actionFunc applies a transformation to current value (possibility using root)
 // then applies the next action from actions (using next()) to the output of the transformation
 type actionFunc func(r, c interface{}, a actions) (interface{}, error)
 
@@ -151,7 +151,7 @@ func (p *parser) parsePath() (err error) {
 			p.add(func(r, c interface{}, a actions) (interface{}, error) { return c, nil })
 			return nil
 		default:
-			err = fmt.Errorf("unexcepted token %s at %d", p.text(), p.column())
+			err = fmt.Errorf("unexpected token %s at %d", p.text(), p.column())
 		}
 	}
 	return
@@ -278,7 +278,7 @@ parse:
 				return err
 			}
 			indexes = append(indexes, filter)
-		case ':': // when slice value is ommited
+		case ':': // when slice value is omitted
 			if mode == "" {
 				mode = "slice"
 				indexes = append(indexes, 0)
@@ -288,7 +288,7 @@ parse:
 				return fmt.Errorf("unexpected ':' after %s at %d", mode, p.column())
 			}
 			continue // skip separator parsing, it's done
-		case ']': // when slice value is ommited
+		case ']': // when slice value is omitted
 			if mode == "slice" {
 				indexes = append(indexes, 0)
 			} else if len(indexes) == 0 {
