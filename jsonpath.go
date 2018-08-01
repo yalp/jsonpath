@@ -29,6 +29,7 @@ package jsonpath
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"text/scanner"
@@ -192,7 +193,7 @@ func (p *parser) prepareWildcard() error {
 	p.add(func(r, c interface{}, a actions) (interface{}, error) {
 		values := searchResults{}
 		if obj, ok := c.(map[string]interface{}); ok {
-			for _, v := range obj {
+			for _, v := range valuesSortedByKey(obj) {
 				v, err := a.next(r, v)
 				if err != nil {
 					continue
@@ -370,7 +371,7 @@ func recSearchParent(r, c interface{}, a actions, acc searchResults) searchResul
 
 func recSearchChildren(r, c interface{}, a actions, acc searchResults) searchResults {
 	if obj, ok := c.(map[string]interface{}); ok {
-		for _, c := range obj {
+		for _, c := range valuesSortedByKey(obj) {
 			acc = recSearchParent(r, c, a, acc)
 		}
 	} else if array, ok := c.([]interface{}); ok {
@@ -549,4 +550,20 @@ func indexAsString(key, r, c interface{}) (string, error) {
 	default:
 		return "", fmt.Errorf("expected key value (string or expression returning a string) for object access")
 	}
+}
+
+func valuesSortedByKey(m map[string]interface{}) []interface{} {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	values := make([]interface{}, 0, len(m))
+	for _, k := range keys {
+		values = append(values, m[k])
+	}
+	return values
 }
