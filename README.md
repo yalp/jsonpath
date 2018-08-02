@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/yalp/jsonpath.svg?branch=master)](https://travis-ci.org/yalp/jsonpath)
+
 This was mostly an experiment to learn go and test using closures to interpret a JSON path.
 You should use https://github.com/PaesslerAG/jsonpath instead.
 
